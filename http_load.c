@@ -54,7 +54,7 @@
 #include "hash.h"
 
 #if defined(AF_INET6) && defined(IN6_IS_ADDR_V4MAPPED)
-//#define USE_IPV6
+#define USE_IPV6
 #endif
 
 #define max(a,b) ((a)>=(b)?(a):(b))
