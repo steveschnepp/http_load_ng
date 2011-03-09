@@ -25,8 +25,8 @@ LDFLAGS =	-s $(SSL_LIBS) $(SYSV_LIBS)
 
 all:		http_load
 
-http_load:	http_load.o timers.o
-	$(CC) $(CFLAGS) http_load.o timers.o $(LDFLAGS) -o http_load
+http_load:	http_load.o timers.o hash.o
+	$(CC) $(CFLAGS) http_load.o timers.o hash.o $(LDFLAGS) -o http_load
 
 http_load.o:	http_load.c timers.h port.h
 	$(CC) $(CFLAGS) -c http_load.c

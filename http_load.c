@@ -39,6 +39,7 @@
 #include <netdb.h>
 #include <errno.h>
 #include <signal.h>
+#include <time.h>
 
 #ifdef USE_SSL
 #include <openssl/ssl.h>
@@ -50,8 +51,10 @@
 #include "port.h"
 #include "timers.h"
 
+#include "hash.h"
+
 #if defined(AF_INET6) && defined(IN6_IS_ADDR_V4MAPPED)
-#define USE_IPV6
+//#define USE_IPV6
 #endif
 
 #define max(a,b) ((a)>=(b)?(a):(b))
@@ -72,6 +75,7 @@
 
 typedef struct {
     char* url_str;
+    char* tag;
     int protocol;
     char* hostname;
     unsigned short port;
@@ -89,6 +93,12 @@ typedef struct {
     } url;
 static url* urls;
 static int num_urls, max_urls;
+
+typedef struct {
+	int calls_nb;
+	long long calls_us;
+} tag_counter;
+static struct StrHashTable tag_counters = {{0}, NULL, NULL, hash_strhash, strcmp};
 
 typedef struct {
     char* str;
@@ -205,6 +215,14 @@ static void* realloc_check( void* ptr, size_t size );
 static char* strdup_check( char* str );
 static void check( void* ptr );
 
+/* CTRL-C is handled gracefully */
+static volatile int sigint_catched = 0;
+static void handle_sigint( int signal_no ) {
+	++sigint_catched;
+}
+
+/* Caching gethostbyname requests */
+static struct StrHashTable gethostbyname_hash = {{0}, NULL, NULL, hash_strhash, strcmp};
 
 int
 main( int argc, char** argv )
@@ -436,6 +454,7 @@ main( int argc, char** argv )
 	(void) tmr_create(
 	    &now, end_timer, JunkClientData, end_seconds * 1000L, 0 );
     (void) signal( SIGPIPE, SIG_IGN );
+    (void) signal( SIGINT, handle_sigint );
 
     /* Main loop. */
     for (;;)
@@ -476,6 +495,8 @@ main( int argc, char** argv )
 	    FD_SETSIZE, &rfdset, &wfdset, (fd_set*) 0, tmr_timeout( &now ) );
 	if ( r < 0 )
 	    {
+            if ( sigint_catched ) finish( &now );
+
 	    perror( "select" );
 	    exit( 1 );
 	    }
@@ -563,6 +584,16 @@ read_url_file( char* url_file )
 	    urls = (url*) realloc_check( (void*) urls, max_urls * sizeof(url) );
 	    }
 
+        /* Process eventual tags, search for \t */
+	for ( cp = line; *cp != '\0'; ++cp ) {
+		if (*cp != '\t') continue;
+		/* There is a tag present, cut the line here, and go to the tag part */
+		*cp = '\0'; ++cp;
+		urls[num_urls].tag = strdup_check( cp );
+		/* We don't expect other fields */
+		break;
+	}
+	
 	/* Add to table. */
 	urls[num_urls].url_str = strdup_check( line );
 
@@ -620,7 +651,6 @@ read_url_file( char* url_file )
 	}
     }
 
-
 static void
 lookup_address( int url_num )
     {
@@ -658,6 +688,16 @@ lookup_address( int url_num )
     hints.ai_family = PF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     (void) snprintf( portstr, sizeof(portstr), "%d", (int) port );
+    url* url_addr = hash_get(&gethostbyname_hash, hostname);
+    if ( url_addr ) {
+	urls[url_num].sock_family = url_addr->sock_family;
+        urls[url_num].sock_type = url_addr->sock_type;
+        urls[url_num].sock_protocol = url_addr->sock_protocol;
+        urls[url_num].sa_len = url_addr->sa_len;
+        (void) memmove(&urls[url_num].sa, &url_addr->sa, urls[url_num].sa_len);
+	return;
+    }
+
     if ( (gaierr = getaddrinfo( hostname, portstr, &hints, &ai )) != 0 )
 	{
 	(void) fprintf(
@@ -701,8 +741,7 @@ lookup_address( int url_num )
 	urls[url_num].sa_len = aiv4->ai_addrlen;
 	(void) memmove( &urls[url_num].sa, aiv4->ai_addr, aiv4->ai_addrlen );
 	freeaddrinfo( ai );
-	return;
-	}
+	} else
     if ( aiv6 != (struct addrinfo*) 0 )
 	{
 	if ( sizeof(urls[url_num].sa) < aiv6->ai_addrlen )
@@ -719,21 +758,37 @@ lookup_address( int url_num )
 	urls[url_num].sa_len = aiv6->ai_addrlen;
 	(void) memmove( &urls[url_num].sa, aiv6->ai_addr, aiv6->ai_addrlen );
 	freeaddrinfo( ai );
-	return;
-	}
+	} else 
+    {
 
     (void) fprintf(
 	stderr, "%s: no valid address found for host %s\n", argv0, hostname );
     exit( 1 );
+    }
+
+    url_addr = (url* ) malloc(sizeof(url));
+    url_addr->sock_family = urls[url_num].sock_family;
+    url_addr->sock_type = urls[url_num].sock_type;
+    url_addr->sock_protocol = urls[url_num].sock_protocol;
+    url_addr->sa_len = urls[url_num].sa_len;
+    (void) memmove(&url_addr->sa, &urls[url_num].sa, urls[url_num].sa_len);
+
+    hash_insert( &gethostbyname_hash, hostname, url_addr);
+
+    return;
 
 #else /* USE_IPV6 */
 
-    he = gethostbyname( hostname );
-    if ( he == (struct hostent*) 0 )
-	{
-	(void) fprintf( stderr, "%s: unknown host - %s\n", argv0, hostname );
-	exit( 1 );
-	}
+    he = hash_get(&gethostbyname_hash, hostname);
+    if ( ! he ) {
+	he = gethostbyname( hostname );
+	    if ( he == (struct hostent*) 0 )
+		{
+		(void) fprintf( stderr, "%s: unknown host - %s\n", argv0, hostname );
+		exit( 1 );
+		}
+	hash_insert(&gethostbyname_hash, hostname, he);
+    }
     urls[url_num].sock_family = urls[url_num].sa.sin_family = he->h_addrtype;
     urls[url_num].sock_type = SOCK_STREAM;
     urls[url_num].sock_protocol = 0;
@@ -920,7 +975,8 @@ handle_connect( int cnum, struct timeval* nowP, int double_check )
     if ( double_check )
 	{
 	/* Check to make sure the non-blocking connect succeeded. */
-	int err, errlen;
+	int err;
+	socklen_t errlen;
 
 	if ( connect(
 		 connections[cnum].conn_fd,
@@ -1000,6 +1056,10 @@ handle_connect( int cnum, struct timeval* nowP, int double_check )
 	}
 #endif
     connections[cnum].did_connect = 1;
+
+#ifdef DEBUG
+   (void) printf("cnum: %d, tag: %.500s, url:%.500s\n", cnum, urls[url_num].tag, urls[url_num].filename);
+#endif // DEBUG
 
     /* Format the request. */
     if ( do_proxy )
@@ -1645,10 +1705,10 @@ wakeup_connection( ClientData client_data, struct timeval* nowP )
 static void
 close_connection( int cnum )
     {
-    int url_num;
+    int url_num = connections[cnum].url_num;
 
 #ifdef USE_SSL
-    if ( urls[connections[cnum].url_num].protocol == PROTO_HTTPS )
+    if ( urls[url_num].protocol == PROTO_HTTPS )
 	SSL_free( connections[cnum].ssl );
 #endif
     (void) close( connections[cnum].conn_fd );
@@ -1677,11 +1737,24 @@ close_connection( int cnum )
 	max_response_usecs = max( max_response_usecs, response_usecs );
 	min_response_usecs = min( min_response_usecs, response_usecs );
 	++responses_completed;
+	    /* Handle tags */
+	    if (urls[url_num].tag) {
+			tag_counter* url_tag = hash_get(&tag_counters, urls[url_num].tag);
+			if (! url_tag) {
+				url_tag = (tag_counter*) malloc(sizeof(tag_counter));
+				url_tag->calls_nb = 0;
+				url_tag->calls_us = 0;
+				hash_insert(&tag_counters, urls[url_num].tag, url_tag);
+			}
+
+			url_tag->calls_nb += 1;
+			url_tag->calls_us += response_usecs;
+	    }
 	}
     if ( connections[cnum].http_status >= 0 && connections[cnum].http_status <= 999 )
 	++http_status_counts[connections[cnum].http_status];
 
-    url_num = connections[cnum].url_num;
+
     if ( do_checksum )
 	{
 	if ( ! urls[url_num].got_checksum )
@@ -1799,7 +1872,23 @@ finish( struct timeval* nowP )
     (void) printf( "HTTP response codes:\n" );
     for ( i = 0; i < 1000; ++i )
 	if ( http_status_counts[i] > 0 )
-	    (void) printf( "  code %03d -- %d\n", i, http_status_counts[i] );
+	    (void) printf( "  code %03d -- %d (%g %%)\n", i, http_status_counts[i], ((float) http_status_counts[i] / (float) responses_completed * 100) );
+
+    /* Show tags informations if present */
+    int tag_header_emitted = 0;
+    for(i = 0; i < NR_BUCKETS; ++i ) {
+	struct StrHashNode *node = tag_counters.buckets[i];
+	while (node) {
+    		if (! tag_header_emitted++) printf( "Per tags reporting:\n" );
+		tag_counter* tag_counter = node->value;
+		float percent = (float) tag_counter->calls_nb / fetches_completed * 100;
+		float secs = (float) tag_counter->calls_us / tag_counter->calls_nb / 1000;
+		
+		(void) printf( "  tag %s -- %d (%g %%) in average %g msecs/request\n", node->key, tag_counter->calls_nb, percent, secs);
+		
+		node = node->next;
+	}
+    }
 
     tmr_destroy();
 #ifdef USE_SSL
