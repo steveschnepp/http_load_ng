@@ -215,8 +215,8 @@ static void finish( struct timeval* nowP );
 static long long delta_timeval( struct timeval* start, struct timeval* finish );
 static void* malloc_check( size_t size );
 static void* realloc_check( void* ptr, size_t size );
-static char* strdup_check( char* str );
-static void check( void* ptr );
+static char* strdup_check( const char* orig_str );
+static void check( const void* ptr );
 
 /* CTRL-C is handled gracefully */
 static volatile int sigint_catched = 0;
@@ -1984,16 +1984,16 @@ realloc_check( void* ptr, size_t size )
 
 
 static char*
-strdup_check( char* str )
+strdup_check( const char* orig_str )
     {
-    str = strdup( str );
+    char* str = strdup( orig_str );
     check( (void*) str );
     return str;
     }
 
 
 static void
-check( void* ptr )
+check( const void* ptr )
     {
     if ( ptr == (void*) 0 )
 	{
