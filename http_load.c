@@ -113,6 +113,8 @@ static int num_sips, max_sips;
 #define PROTO_HTTPS 1
 #endif
 
+static struct StrHashTable host_aliases = {{0}, NULL, NULL, hash_strhash, strcmp};
+
 typedef struct {
     int url_num;
     struct sockaddr_in sa;
@@ -198,6 +200,7 @@ static void usage( void );
 static void read_url_file( char* url_file );
 static void lookup_address( int url_num );
 static void read_sip_file( char* sip_file );
+static void read_host_alias_file( char* alias_file );
 static void start_connection( struct timeval* nowP );
 static void start_socket( int url_num, int cnum, struct timeval* nowP );
 static void handle_connect( int cnum, struct timeval* nowP, int double_check );
@@ -241,6 +244,7 @@ main( int argc, char** argv )
     int cnum;
     char* url_file;
     char* sip_file;
+    char* host_alias_file;
 #ifdef RLIMIT_NOFILE
     struct rlimit limits;
 #endif /* RLIMIT_NOFILE */
@@ -272,6 +276,7 @@ main( int argc, char** argv )
     do_checksum = do_throttle = do_verbose = do_jitter = do_proxy = 0;
     throttle = THROTTLE;
     sip_file = (char*) 0;
+    host_alias_file = (char*) 0;
     idle_secs = IDLE_SECS;
     start = START_NONE;
     end = END_NONE;
@@ -350,6 +355,8 @@ main( int argc, char** argv )
 	    }
 	else if ( strncmp( argv[argn], "-sip", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
 	    sip_file = argv[++argn];
+	else if ( strncmp( argv[argn], "-hostaliases", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
+	    host_alias_file = argv[++argn];
 #ifdef USE_SSL
 	else if ( strncmp( argv[argn], "-cipher", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
 	    {
@@ -387,6 +394,9 @@ main( int argc, char** argv )
     if ( do_jitter && start != START_RATE )
 	usage();
     url_file = argv[argn];
+
+    if ( host_alias_file != (char*) 0 )
+        read_host_alias_file( host_alias_file );
 
     /* Read in and parse the URLs. */
     read_url_file( url_file );
@@ -686,6 +696,12 @@ lookup_address( int url_num )
 	port = urls[url_num].port;
 	}
 
+	/* Check if the hostname should be overriden */
+	char *hostname_aliased = (char*) hash_get(&host_aliases, hostname);
+	if (hostname_aliased != (char*) 0) {
+		hostname = hostname_aliased;
+ 	}
+
 #ifdef USE_IPV6
 
     (void) memset( &hints, 0, sizeof(hints) );
@@ -804,6 +820,44 @@ lookup_address( int url_num )
 
     }
 
+static void read_host_alias_file( char* alias_file ) {
+	FILE* fp;
+	char line[5000];
+
+	fp = fopen( alias_file, "r" );
+	if ( fp == (FILE*) 0 ) {
+		perror( alias_file );
+		exit( 1 );
+	}
+
+	while ( fgets( line, sizeof(line), fp ) != (char*) 0 ) {
+		/* Nuke trailing newline. */
+		if ( line[strlen( line ) - 1] == '\n' )
+			line[strlen( line ) - 1] = '\0';
+
+		/* split on [ \t] */
+		char *cp; char *alias = "";
+		for ( cp = line; *cp != '\0'; ++cp ) {
+			if (*cp != ' ' && *cp != '\t') continue;
+			*cp = '\0'; ++cp;
+			/* skip empty  */
+			if (strlen(cp) == 0) continue; 
+
+			/* flush alias */
+			if (strlen(alias)) {
+				hash_insert(&host_aliases, strdup_check(alias), strdup_check(line));
+			}
+
+			alias = cp;
+		}
+
+		/* flush last alias */
+		if (strlen(alias)) {
+			hash_insert(&host_aliases, strdup_check(alias), strdup_check(line));
+		}
+
+	}
+}
 
 static void
 read_sip_file( char* sip_file )
