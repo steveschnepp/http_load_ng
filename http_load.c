@@ -75,7 +75,9 @@
 
 typedef struct {
     char* url_str;
-    char* tag;
+    char** tags;
+    int tagslen;
+    int tagsnum;
     int protocol;
     char* hostname;
     unsigned short port;
@@ -556,6 +558,19 @@ usage( void )
     exit( 1 );
     }
 
+static void add_tag (int num_url, const char* tag) {
+	url* url = urls + num_url;
+	/* Check for room in tags array */
+	if (url->tagsnum >= url->tagslen) {
+		/* adding 1 by 1 since each URL should only have 1 tag on average,
+		 and we try to be memory conservative */
+		url->tagslen += 1;
+		url->tags = realloc_check(url->tags, url->tagslen * sizeof(char*));
+	}
+	
+	url->tags[url->tagsnum] = strdup_check( tag );
+	url->tagsnum ++;
+}
 
 static void
 read_url_file( char* url_file )
@@ -569,7 +584,6 @@ read_url_file( char* url_file )
     int https_len = strlen( https );
 #endif
     int proto_len, host_len;
-    char* cp;
 
     if (! strncmp( url_file, "-", 2 )) {
         fp = stdin;
@@ -598,17 +612,32 @@ read_url_file( char* url_file )
 	    urls = (url*) realloc_check( (void*) urls, max_urls * sizeof(url) );
 	    }
 
-        /* Process eventual tags, search for \t */
+	urls[num_urls].tags = NULL;
+	urls[num_urls].tagslen = 0;
+ 	urls[num_urls].tagsnum = 0;
+
+	/* split on [ \t] */
+	char *cp; char *token = "";
 	for ( cp = line; *cp != '\0'; ++cp ) {
-		if (*cp != '\t') continue;
-		/* There is a tag present, cut the line here, and go to the tag part */
+		if (*cp != ' ' && *cp != '\t') continue;
 		*cp = '\0'; ++cp;
-		urls[num_urls].tag = strdup_check( cp );
-		/* We don't expect other fields */
-		break;
+		/* skip empty  */
+		if (strlen(cp) == 0) continue; 
+
+		/* flush token */
+		if (strlen(token)) {
+			add_tag(num_urls, token);
+		}
+
+		token = cp;
+	}
+
+	/* flush last token */
+	if (strlen(token)) {
+		add_tag(num_urls, token);
 	}
 	
-	/* Add to table. */
+	/* Add url to table. */
 	urls[num_urls].url_str = strdup_check( line );
 
 	/* Parse it. */
@@ -1116,7 +1145,7 @@ handle_connect( int cnum, struct timeval* nowP, int double_check )
     connections[cnum].did_connect = 1;
 
    if (do_verbose >= 2)
-       (void) printf("cnum: %d, tag: %.500s, url:%.500s\n", cnum, urls[url_num].tag, urls[url_num].filename);
+       (void) printf("cnum: %d, tag: %.500s, url:%.500s\n", cnum, (urls[url_num].tags ? urls[url_num].tags[0] : "-"), urls[url_num].filename);
 
     /* Format the request. */
     if ( do_proxy )
@@ -1794,18 +1823,20 @@ close_connection( int cnum )
 	max_response_usecs = max( max_response_usecs, response_usecs );
 	min_response_usecs = min( min_response_usecs, response_usecs );
 	++responses_completed;
-	    /* Handle tags */
-	    if (urls[url_num].tag) {
-			tag_counter* url_tag = hash_get(&tag_counters, urls[url_num].tag);
-			if (! url_tag) {
-				url_tag = (tag_counter*) malloc(sizeof(tag_counter));
-				url_tag->calls_nb = 0;
-				url_tag->calls_us = 0;
-				hash_insert(&tag_counters, urls[url_num].tag, url_tag);
-			}
+        /* Handle tags */
+        int i;
+        for (i = 0; i < urls[url_num].tagsnum; ++i) {
+		char* tag_str = urls[url_num].tags[i];
+		tag_counter* tag_cntr = hash_get(&tag_counters, tag_str);
+		if (! tag_cntr) {
+			tag_cntr = (tag_counter*) malloc(sizeof(tag_counter));
+			tag_cntr->calls_nb = 0;
+			tag_cntr->calls_us = 0;
+			hash_insert(&tag_counters, tag_str, tag_cntr);
+		}
 
-			url_tag->calls_nb += 1;
-			url_tag->calls_us += response_usecs;
+		tag_cntr->calls_nb += 1;
+		tag_cntr->calls_us += response_usecs;
 	    }
 	}
     if ( connections[cnum].http_status >= 0 && connections[cnum].http_status <= 999 )
