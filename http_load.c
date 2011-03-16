@@ -1891,8 +1891,8 @@ progress_report( ClientData client_data, struct timeval* nowP )
 
     elapsed = delta_timeval( &start_at, nowP ) / 1000000.0;
     (void) fprintf( stderr,
-        "--- %g secs, %d fetches started, %d completed, %d current\n",
-	elapsed, fetches_started, fetches_completed, num_connections );
+        "--- %d secs, %d fetches started, %d completed, %d current\n",
+	(int) elapsed, fetches_started, fetches_completed, num_connections );
     }
 
 
