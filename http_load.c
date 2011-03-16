@@ -561,7 +561,11 @@ read_url_file( char* url_file )
     int proto_len, host_len;
     char* cp;
 
-    fp = fopen( url_file, "r" );
+    if (! strncmp( url_file, "-", 2 )) {
+        fp = stdin;
+    } else {
+        fp = fopen( url_file, "r" );
+    }
     if ( fp == (FILE*) 0 )
 	{
 	perror( url_file );
