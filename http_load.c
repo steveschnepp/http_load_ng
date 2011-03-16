@@ -320,7 +320,7 @@ main( int argc, char** argv )
 	else if ( strncmp( argv[argn], "-rate", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
 	    {
 	    start = START_RATE;
-	    start_rate = atoi( argv[++argn] );
+	    start_rate = atof( argv[++argn] );
 	    if ( start_rate <= 0 )
 		{
 		(void) fprintf(
