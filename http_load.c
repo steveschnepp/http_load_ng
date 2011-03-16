@@ -237,7 +237,8 @@ main( int argc, char** argv )
 #define START_NONE 0
 #define START_PARALLEL 1
 #define START_RATE 2
-    int start_parallel = -1, start_rate = -1;
+    int start_parallel = -1;
+    float start_rate = -1;
     int end;
 #define END_NONE 0
 #define END_FETCHES 1
@@ -320,10 +321,10 @@ main( int argc, char** argv )
 	    {
 	    start = START_RATE;
 	    start_rate = atoi( argv[++argn] );
-	    if ( start_rate < 1 )
+	    if ( start_rate <= 0 )
 		{
 		(void) fprintf(
-		    stderr, "%s: rate must be at least 1\n", argv0 );
+		    stderr, "%s: rate must be strictly positive\n", argv0 );
 		exit( 1 );
 		}
 	    if ( start_rate > 1000 )
@@ -452,7 +453,7 @@ main( int argc, char** argv )
 	    &now, progress_report, JunkClientData, PROGRESS_SECS * 1000L, 1 );
     if ( start == START_RATE )
 	{
-	start_interval = 1000L / start_rate;
+	start_interval = 1000.0 / start_rate;
 	if ( do_jitter )
 	    {
 	    low_interval = start_interval * 9 / 10;
