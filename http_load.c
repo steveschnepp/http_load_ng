@@ -287,7 +287,7 @@ main( int argc, char** argv )
 	    throttle = atoi( argv[++argn] ) / 10.0;
 	    }
 	else if ( strncmp( argv[argn], "-verbose", strlen( argv[argn] ) ) == 0 )
-	    do_verbose = 1;
+	    do_verbose += 1;
 	else if ( strncmp( argv[argn], "-timeout", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
 	    idle_secs = atoi( argv[++argn] );
 	else if ( strncmp( argv[argn], "-jitter", strlen( argv[argn] ) ) == 0 )
@@ -1061,9 +1061,8 @@ handle_connect( int cnum, struct timeval* nowP, int double_check )
 #endif
     connections[cnum].did_connect = 1;
 
-#ifdef DEBUG
-   (void) printf("cnum: %d, tag: %.500s, url:%.500s\n", cnum, urls[url_num].tag, urls[url_num].filename);
-#endif // DEBUG
+   if (do_verbose >= 2)
+       (void) printf("cnum: %d, tag: %.500s, url:%.500s\n", cnum, urls[url_num].tag, urls[url_num].filename);
 
     /* Format the request. */
     if ( do_proxy )
