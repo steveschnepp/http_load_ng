@@ -68,6 +68,7 @@
 
 /* How often to show progress reports. */
 #define PROGRESS_SECS 60
+static float progress_secs = PROGRESS_SECS;
 
 /* How many file descriptors to not use. */
 #define RESERVED_FDS 3
@@ -294,6 +295,8 @@ main( int argc, char** argv )
 	    do_throttle = 1;
 	    throttle = atoi( argv[++argn] ) / 10.0;
 	    }
+	else if ( strncmp( argv[argn], "-progress", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
+	    progress_secs = atof( argv[++argn] );
 	else if ( strncmp( argv[argn], "-verbose", strlen( argv[argn] ) ) == 0 )
 	    do_verbose += 1;
 	else if ( strncmp( argv[argn], "-timeout", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
@@ -450,7 +453,7 @@ main( int argc, char** argv )
     start_at = now;
     if ( do_verbose )
 	(void) tmr_create(
-	    &now, progress_report, JunkClientData, PROGRESS_SECS * 1000L, 1 );
+	    &now, progress_report, JunkClientData, progress_secs * 1000, 1 );
     if ( start == START_RATE )
 	{
 	start_interval = 1000.0 / start_rate;
