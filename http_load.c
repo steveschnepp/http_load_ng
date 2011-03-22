@@ -73,6 +73,12 @@ static float progress_secs = PROGRESS_SECS;
 /* How many file descriptors to not use. */
 #define RESERVED_FDS 3
 
+typedef struct slist_s {
+	void* value;
+	struct slist_s* next;
+} slist;
+
+static slist* custom_headers = NULL;
 
 typedef struct {
     char* url_str;
@@ -363,6 +369,13 @@ main( int argc, char** argv )
 	    sip_file = argv[++argn];
 	else if ( strncmp( argv[argn], "-hostaliases", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
 	    host_alias_file = argv[++argn];
+	else if ( strncmp( argv[argn], "-header", strlen( argv[argn] ) ) == 0 && argn + 1 < argc ) 
+           {
+	   slist* new_header = malloc_check(sizeof(new_header));
+	   new_header->value = argv[++argn];
+	   new_header->next = custom_headers;
+	   custom_headers = new_header;
+	   }
 #ifdef USE_SSL
 	else if ( strncmp( argv[argn], "-cipher", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
 	    {
@@ -1176,6 +1189,13 @@ handle_connect( int cnum, struct timeval* nowP, int double_check )
 	urls[url_num].hostname );
     bytes += snprintf(
 	&buf[bytes], sizeof(buf) - bytes, "User-Agent: %s\r\n", VERSION );
+
+    /* Handle custom headers */
+    slist* header_node;
+    for (header_node = custom_headers; header_node != NULL; header_node = header_node->next) {
+    	bytes += snprintf( &buf[bytes], sizeof(buf) - bytes, "%s\r\n", (char*) header_node->value );
+    }
+
     bytes += snprintf( &buf[bytes], sizeof(buf) - bytes, "\r\n" );
 
     /* Send the request. */
