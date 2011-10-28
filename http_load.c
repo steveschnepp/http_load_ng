@@ -1867,7 +1867,12 @@ close_connection( int cnum )
 	++http_status_counts[connections[cnum].http_status];
 
 
-    if ( do_checksum )
+    /* If it's a 200 response code, checking checksum/size. Otherwise, no. */
+    if ( connections[cnum].http_status != 200 ) 
+    	{
+		/* Ignore checksum/size. */
+	}
+    else if ( do_checksum )
 	{
 	if ( ! urls[url_num].got_checksum )
 	    {
