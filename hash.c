@@ -39,7 +39,7 @@ void *hash_insert(struct StrHashTable *table,char *key,void *value)
         if(table->free_value != NULL)
             table->free_value((*tmp)->value);
         node = *tmp;
-	// Return the old value, to let the caller free it if needed
+	/* Return the old value, to let the caller free it if needed */
         old_value = node->value;
     } else {
         node = malloc(sizeof *node);
@@ -77,4 +77,4 @@ int main(int argc,char *argv[])
 
     return 0;
 }
-#endif // IS_MAIN
+#endif /* IS_MAIN */

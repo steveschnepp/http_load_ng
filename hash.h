@@ -25,4 +25,4 @@ void *hash_insert(struct StrHashTable *table, char *key, void *value);
 
 unsigned int hash_strhash(const char *str);
 
-#endif // __HASH_H__
+#endif /* __HASH_H__ */
